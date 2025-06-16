@@ -16,7 +16,8 @@ from __future__ import annotations
 from datetime import datetime
 import random
 import string
-from typing import Optional, Dict
+from typing import Dict
+from typing import Optional
 
 from google.genai import types
 from pydantic import alias_generators

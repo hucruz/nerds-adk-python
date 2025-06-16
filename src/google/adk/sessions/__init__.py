@@ -15,10 +15,10 @@ import logging
 
 from .base_session_service import BaseSessionService
 from .in_memory_session_service import InMemorySessionService
+from .redis_memory_session_service import RedisMemorySessionService
 from .session import Session
 from .state import State
 from .vertex_ai_session_service import VertexAiSessionService
-from .redis_memory_session_service import RedisMemorySessionService
 
 logger = logging.getLogger("google_adk." + __name__)
 

@@ -1,17 +1,16 @@
 import json
 import time
+from typing import Any
+from typing import Optional
 import uuid
-from typing import Any, Optional
 
 import redis
 from typing_extensions import override
 
 from ..events.event import Event
-from .base_session_service import (
-    BaseSessionService,
-    GetSessionConfig,
-    ListSessionsResponse,
-)
+from .base_session_service import BaseSessionService
+from .base_session_service import GetSessionConfig
+from .base_session_service import ListSessionsResponse
 from .session import Session
 from .state import State
 
