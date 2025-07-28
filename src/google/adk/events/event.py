@@ -137,3 +137,7 @@ class Event(LlmResponse):
     @staticmethod
     def new_id():
         return str(uuid.uuid4())
+
+    @staticmethod
+    def from_dict(data: dict) -> "Event":
+        return Event.model_validate(data)
