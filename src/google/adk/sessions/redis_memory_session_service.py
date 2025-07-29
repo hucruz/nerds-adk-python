@@ -35,6 +35,33 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 DEFAULT_EXPIRATION = 60 * 60  # 1 hour
 
+def _json_serializer(obj):
+    """Fallback serializer to handle non-JSON-compatible types."""
+    import datetime
+    import uuid
+    import math
+    from decimal import Decimal
+
+    if isinstance(obj, set):
+        return list(obj)
+    if isinstance(obj, bytes):
+        try:
+            return obj.decode("utf-8")
+        except Exception:
+            return repr(obj)
+    if isinstance(obj, (datetime.datetime, datetime.date)):
+        return obj.isoformat()
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, float):
+        if math.isnan(obj):
+            return "NaN"
+        if math.isinf(obj):
+            return "Infinity" if obj > 0 else "-Infinity"
+    return str(obj)
+
 
 class RedisMemorySessionService(BaseSessionService):
     """A Redis-backed implementation of the session service."""
@@ -292,5 +319,5 @@ class RedisMemorySessionService(BaseSessionService):
 
     async def _save_sessions(self, app_name: str, user_id: str, sessions: dict[str, Any]):
         key = f"{State.APP_PREFIX}{app_name}:{user_id}"
-        await self.cache.set(key, json.dumps(sessions, default=str))
+        await self.cache.set(key, json.dumps(sessions, default=_json_serializer))
         await self.cache.expire(key, self.expire)
