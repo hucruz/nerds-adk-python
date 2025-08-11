@@ -17,14 +17,17 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from typing import AsyncGenerator
+from typing import ClassVar
+from typing import Dict
 from typing import Type
 
 from typing_extensions import override
 
 from ..events.event import Event
-from ..utils.feature_decorator import working_in_progress
 from .base_agent import BaseAgent
+from .base_agent_config import BaseAgentConfig
 from .invocation_context import InvocationContext
 from .parallel_agent_config import ParallelAgentConfig
 
@@ -95,6 +98,9 @@ class ParallelAgent(BaseAgent):
   - Generating multiple responses for review by a subsequent evaluation agent.
   """
 
+  config_type: ClassVar[type[BaseAgentConfig]] = ParallelAgentConfig
+  """The config type for this agent."""
+
   @override
   async def _run_async_impl(
       self, ctx: InvocationContext
@@ -114,13 +120,3 @@ class ParallelAgent(BaseAgent):
   ) -> AsyncGenerator[Event, None]:
     raise NotImplementedError('This is not supported yet for ParallelAgent.')
     yield  # AsyncGenerator requires having at least one yield statement
-
-  @classmethod
-  @override
-  @working_in_progress('ParallelAgent.from_config is not ready for use.')
-  def from_config(
-      cls: Type[ParallelAgent],
-      config: ParallelAgentConfig,
-      config_abs_path: str,
-  ) -> ParallelAgent:
-    return super().from_config(config, config_abs_path)

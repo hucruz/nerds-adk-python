@@ -60,9 +60,9 @@ logger = logging.getLogger("google_adk." + __name__)
 class Runner:
     """The Runner class is used to run agents.
 
-    It manages the execution of an agent within a session, handling message
-    processing, event generation, and interaction with various services like
-    artifact storage, session management, and memory.
+      It manages the execution of an agent within a session, handling message
+      processing, event generation, and interaction with various services like
+      artifact storage, session management, and memory.
 
     Attributes:
         app_name: The application name of the runner.
@@ -71,6 +71,7 @@ class Runner:
         plugin_manager: The plugin manager for the runner.
         session_service: The session service for the runner.
         memory_service: The memory service for the runner.
+        credential_service: The credential service for the runner.
     """
 
     app_name: str
@@ -104,17 +105,20 @@ class Runner:
         Args:
             app_name: The application name of the runner.
             agent: The root agent to run.
+            plugins: A list of plugins for the runner.
             artifact_service: The artifact service for the runner.
             session_service: The session service for the runner.
             memory_service: The memory service for the runner.
+            credential_service: The credential service for the runner.
         """
-        self.app_name = app_name
-        self.agent = agent
-        self.artifact_service = artifact_service
-        self.session_service = session_service
-        self.memory_service = memory_service
-        self.credential_service = credential_service
-        self.plugin_manager = PluginManager(plugins=plugins)
+
+    self.app_name = app_name
+    self.agent = agent
+    self.artifact_service = artifact_service
+    self.session_service = session_service
+    self.memory_service = memory_service
+    self.credential_service = credential_service
+    self.plugin_manager = PluginManager(plugins=plugins)
 
     def run(
         self,
@@ -254,37 +258,36 @@ class Runner:
 
         plugin_manager = invocation_context.plugin_manager
 
-        # Step 1: Run the before_run callbacks to see if we should early exit.
-        early_exit_result = await plugin_manager.run_before_run_callback(
-            invocation_context=invocation_context
+    # Step 1: Run the before_run callbacks to see if we should early exit.
+    early_exit_result = await plugin_manager.run_before_run_callback(
+        invocation_context=invocation_context
+    )
+    if isinstance(early_exit_result, types.Content):
+        early_exit_event = Event(
+            invocation_id=invocation_context.invocation_id,
+            author="model",
+            content=early_exit_result,
         )
-        if isinstance(early_exit_result, Event):
-            await self.session_service.append_event(
-                session=session,
-                event=Event(
-                    invocation_id=invocation_context.invocation_id,
-                    author="model",
-                    content=early_exit_result,
-                ),
+        await self.session_service.append_event(
+            session=session,
+            event=early_exit_event,
+        )
+        yield early_exit_event
+    else:
+        # Step 2: Otherwise continue with normal execution
+        async for event in execute_fn(invocation_context):
+            if not event.partial:
+                await self.session_service.append_event(session=session, event=event)
+            # Step 3: Run the on_event callbacks to optionally modify the event.
+            modified_event = await plugin_manager.run_on_event_callback(
+                invocation_context=invocation_context, event=event
             )
-            yield early_exit_result
-        else:
-            # Step 2: Otherwise continue with normal execution
-            async for event in execute_fn(invocation_context):
-                if not event.partial:
-                    await self.session_service.append_event(
-                        session=session, event=event
-                    )
-                # Step 3: Run the on_event callbacks to optionally modify the event.
-                modified_event = await plugin_manager.run_on_event_callback(
-                    invocation_context=invocation_context, event=event
-                )
-                yield (modified_event if modified_event else event)
+            yield (modified_event if modified_event else event)
 
-        # Step 4: Run the after_run callbacks to optionally modify the context.
-        await plugin_manager.run_after_run_callback(
-            invocation_context=invocation_context
-        )
+            # Step 4: Run the after_run callbacks to optionally modify the context.
+            await plugin_manager.run_after_run_callback(
+                invocation_context=invocation_context
+            )
 
     async def _append_new_message_to_session(
         self,

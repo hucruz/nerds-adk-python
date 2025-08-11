@@ -25,8 +25,10 @@ from typing import Optional
 from typing import TYPE_CHECKING
 
 from google.genai import types
+from websockets.exceptions import ConnectionClosed
 from websockets.exceptions import ConnectionClosedOK
 
+from . import _output_schema_processor
 from . import functions
 from ...agents.base_agent import BaseAgent
 from ...agents.callback_context import CallbackContext
@@ -86,80 +88,115 @@ class BaseLlmFlow(ABC):
         invocation_context.agent.name,
         llm_request,
     )
-    async with llm.connect(llm_request) as llm_connection:
-      if llm_request.contents:
-        # Sends the conversation history to the model.
-        with tracer.start_as_current_span('send_data'):
 
-          if invocation_context.transcription_cache:
-            from . import audio_transcriber
-
-            audio_transcriber = audio_transcriber.AudioTranscriber(
-                init_client=True
-                if invocation_context.run_config.input_audio_transcription
-                is None
-                else False
-            )
-            contents = audio_transcriber.transcribe_file(invocation_context)
-            logger.debug('Sending history to model: %s', contents)
-            await llm_connection.send_history(contents)
-            invocation_context.transcription_cache = None
-            trace_send_data(invocation_context, event_id, contents)
-          else:
-            await llm_connection.send_history(llm_request.contents)
-            trace_send_data(invocation_context, event_id, llm_request.contents)
-
-      send_task = asyncio.create_task(
-          self._send_to_model(llm_connection, invocation_context)
-      )
-
+    attempt = 1
+    while True:
       try:
-        async for event in self._receive_from_model(
-            llm_connection,
-            event_id,
-            invocation_context,
-            llm_request,
-        ):
-          # Empty event means the queue is closed.
-          if not event:
-            break
-          logger.debug('Receive new event: %s', event)
-          yield event
-          # send back the function response
-          if event.get_function_responses():
-            logger.debug('Sending back last function response event: %s', event)
-            invocation_context.live_request_queue.send_content(event.content)
-          if (
-              event.content
-              and event.content.parts
-              and event.content.parts[0].function_response
-              and event.content.parts[0].function_response.name
-              == 'transfer_to_agent'
-          ):
-            await asyncio.sleep(1)
-            # cancel the tasks that belongs to the closed connection.
-            send_task.cancel()
-            await llm_connection.close()
-          if (
-              event.content
-              and event.content.parts
-              and event.content.parts[0].function_response
-              and event.content.parts[0].function_response.name
-              == 'task_completed'
-          ):
-            # this is used for sequential agent to signal the end of the agent.
-            await asyncio.sleep(1)
-            # cancel the tasks that belongs to the closed connection.
-            send_task.cancel()
-            return
-      finally:
-        # Clean up
-        if not send_task.done():
-          send_task.cancel()
-        try:
-          await send_task
-        except asyncio.CancelledError:
-          pass
+        # On subsequent attempts, use the saved token to reconnect
+        if invocation_context.live_session_resumption_handle:
+          logger.info('Attempting to reconnect (Attempt %s)...', attempt)
+          attempt += 1
+          if not llm_request.live_connect_config:
+            llm_request.live_connect_config = types.LiveConnectConfig()
+          llm_request.live_connect_config.session_resumption.handle = (
+              invocation_context.live_session_resumption_handle
+          )
+          llm_request.live_connect_config.session_resumption.transparent = True
+
+        logger.info(
+            'Establishing live connection for agent: %s',
+            invocation_context.agent.name,
+        )
+        async with llm.connect(llm_request) as llm_connection:
+          if llm_request.contents:
+            # Sends the conversation history to the model.
+            with tracer.start_as_current_span('send_data'):
+
+              if invocation_context.transcription_cache:
+                from . import audio_transcriber
+
+                audio_transcriber = audio_transcriber.AudioTranscriber(
+                    init_client=True
+                    if invocation_context.run_config.input_audio_transcription
+                    is None
+                    else False
+                )
+                contents = audio_transcriber.transcribe_file(invocation_context)
+                logger.debug('Sending history to model: %s', contents)
+                await llm_connection.send_history(contents)
+                invocation_context.transcription_cache = None
+                trace_send_data(invocation_context, event_id, contents)
+              else:
+                await llm_connection.send_history(llm_request.contents)
+                trace_send_data(
+                    invocation_context, event_id, llm_request.contents
+                )
+
+          send_task = asyncio.create_task(
+              self._send_to_model(llm_connection, invocation_context)
+          )
+
+          try:
+            async for event in self._receive_from_model(
+                llm_connection,
+                event_id,
+                invocation_context,
+                llm_request,
+            ):
+              # Empty event means the queue is closed.
+              if not event:
+                break
+              logger.debug('Receive new event: %s', event)
+              yield event
+              # send back the function response
+              if event.get_function_responses():
+                logger.debug(
+                    'Sending back last function response event: %s', event
+                )
+                invocation_context.live_request_queue.send_content(
+                    event.content
+                )
+              if (
+                  event.content
+                  and event.content.parts
+                  and event.content.parts[0].function_response
+                  and event.content.parts[0].function_response.name
+                  == 'transfer_to_agent'
+              ):
+                await asyncio.sleep(1)
+                # cancel the tasks that belongs to the closed connection.
+                send_task.cancel()
+                await llm_connection.close()
+              if (
+                  event.content
+                  and event.content.parts
+                  and event.content.parts[0].function_response
+                  and event.content.parts[0].function_response.name
+                  == 'task_completed'
+              ):
+                # this is used for sequential agent to signal the end of the agent.
+                await asyncio.sleep(1)
+                # cancel the tasks that belongs to the closed connection.
+                send_task.cancel()
+                return
+          finally:
+            # Clean up
+            if not send_task.done():
+              send_task.cancel()
+            try:
+              await send_task
+            except asyncio.CancelledError:
+              pass
+      except (ConnectionClosed, ConnectionClosedOK) as e:
+        # when the session timeout, it will just close and not throw exception.
+        # so this is for bad cases
+        logger.error(f'Connection closed: {e}.')
+        raise
+      except Exception as e:
+        logger.error(
+            f'An unexpected error occurred in live flow: {e}', exc_info=True
+        )
+        raise
 
   async def _send_to_model(
       self,
@@ -246,6 +283,14 @@ class BaseLlmFlow(ABC):
     try:
       while True:
         async for llm_response in llm_connection.receive():
+          if llm_response.live_session_resumption_update:
+            logger.info(
+                'Update session resumption hanlde:'
+                f' {llm_response.live_session_resumption_update}.'
+            )
+            invocation_context.live_session_resumption_handle = (
+                llm_response.live_session_resumption_update.new_handle
+            )
           model_response_event = Event(
               id=Event.new_id(),
               invocation_id=invocation_context.invocation_id,
@@ -456,7 +501,20 @@ class BaseLlmFlow(ABC):
       function_response_event = await functions.handle_function_calls_live(
           invocation_context, model_response_event, llm_request.tools_dict
       )
+      # Always yield the function response event first
       yield function_response_event
+
+      # Check if this is a set_model_response function response
+      if json_response := _output_schema_processor.get_structured_model_response(
+          function_response_event
+      ):
+        # Create and yield a final model response event
+        final_event = (
+            _output_schema_processor.create_final_model_response_event(
+                invocation_context, json_response
+            )
+        )
+        yield final_event
 
       transfer_to_agent = function_response_event.actions.transfer_to_agent
       if transfer_to_agent:
@@ -488,7 +546,20 @@ class BaseLlmFlow(ABC):
       if auth_event:
         yield auth_event
 
+      # Always yield the function response event first
       yield function_response_event
+
+      # Check if this is a set_model_response function response
+      if json_response := _output_schema_processor.get_structured_model_response(
+          function_response_event
+      ):
+        # Create and yield a final model response event
+        final_event = (
+            _output_schema_processor.create_final_model_response_event(
+                invocation_context, json_response
+            )
+        )
+        yield final_event
       transfer_to_agent = function_response_event.actions.transfer_to_agent
       if transfer_to_agent:
         agent_to_run = self._get_agent_to_run(

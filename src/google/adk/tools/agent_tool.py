@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from google.genai import types
 from pydantic import BaseModel
+from pydantic import ConfigDict
 from pydantic import model_validator
 from typing_extensions import override
 
@@ -27,7 +28,8 @@ from ..agents.common_configs import AgentRefConfig
 from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ._forwarding_artifact_service import ForwardingArtifactService
 from .base_tool import BaseTool
-from .base_tool import ToolArgsConfig
+from .tool_configs import BaseToolConfig
+from .tool_configs import ToolArgsConfig
 from .tool_context import ToolContext
 
 if TYPE_CHECKING:
@@ -175,7 +177,7 @@ class AgentTool(BaseTool):
     )
 
 
-class AgentToolConfig(BaseModel):
+class AgentToolConfig(BaseToolConfig):
   """The config for the AgentTool."""
 
   agent: AgentRefConfig

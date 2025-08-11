@@ -22,8 +22,8 @@ from typing import Type
 from typing_extensions import override
 
 from ..events.event import Event
-from ..utils.feature_decorator import working_in_progress
 from .base_agent import BaseAgent
+from .base_agent import BaseAgentConfig
 from .invocation_context import InvocationContext
 from .llm_agent import LlmAgent
 from .sequential_agent_config import SequentialAgentConfig
@@ -31,6 +31,9 @@ from .sequential_agent_config import SequentialAgentConfig
 
 class SequentialAgent(BaseAgent):
   """A shell agent that runs its sub-agents in sequence."""
+
+  config_type: Type[BaseAgentConfig] = SequentialAgentConfig
+  """The config type for this agent."""
 
   @override
   async def _run_async_impl(
@@ -77,13 +80,3 @@ class SequentialAgent(BaseAgent):
     for sub_agent in self.sub_agents:
       async for event in sub_agent.run_live(ctx):
         yield event
-
-  @classmethod
-  @override
-  @working_in_progress('SequentialAgent.from_config is not ready for use.')
-  def from_config(
-      cls: Type[SequentialAgent],
-      config: SequentialAgentConfig,
-      config_abs_path: str,
-  ) -> SequentialAgent:
-    return super().from_config(config, config_abs_path)
