@@ -13,9 +13,13 @@
 # limitations under the License.
 from __future__ import annotations
 
+import base64
 import copy
+import datetime
+from decimal import Decimal
 import json
 import logging
+import math
 import time
 from typing import Any
 from typing import Optional
@@ -31,53 +35,48 @@ from .base_session_service import ListSessionsResponse
 from .session import Session
 from .state import State
 
-import base64
-
-logger = logging.getLogger('google_adk.' + __name__)
+logger = logging.getLogger("google_adk." + __name__)
 
 DEFAULT_EXPIRATION = 60 * 60  # 1 hour
 
 
 def _json_serializer(obj):
   """Fallback serializer to handle non-JSON-compatible types."""
-  import datetime
-  from decimal import Decimal
-  import math
-  import uuid
-
-    if isinstance(obj, set):
-        return list(obj)
-    if isinstance(obj, bytes):
-        try:
-            return base64.b64encode(obj).decode("ascii")
-        except Exception:
-            return repr(obj)
-    if isinstance(obj, (datetime.datetime, datetime.date)):
-        return obj.isoformat()
-    if isinstance(obj, uuid.UUID):
-        return str(obj)
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if isinstance(obj, float):
-        if math.isnan(obj):
-            return "NaN"
-        if math.isinf(obj):
-            return "Infinity" if obj > 0 else "-Infinity"
+  if isinstance(obj, set):
+    return list(obj)
+  if isinstance(obj, bytes):
+    try:
+      return base64.b64encode(obj).decode("ascii")
+    except Exception:
+      return repr(obj)
+  if isinstance(obj, (datetime.datetime, datetime.date)):
+    return obj.isoformat()
+  if isinstance(obj, uuid.UUID):
     return str(obj)
+  if isinstance(obj, Decimal):
+    return float(obj)
+  if isinstance(obj, float):
+    if math.isnan(obj):
+      return "NaN"
+    if math.isinf(obj):
+      return "Infinity" if obj > 0 else "-Infinity"
+  return str(obj)
+
 
 def _restore_bytes(obj):
-    if isinstance(obj, dict):
-        return {k: _restore_bytes(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_restore_bytes(v) for v in obj]
-    elif isinstance(obj, str):
-        try:
-            # intenta decodificar base64
-            data = base64.b64decode(obj, validate=True)
-            return data
-        except Exception:
-            return obj
-    return obj
+  if isinstance(obj, dict):
+    return {k: _restore_bytes(v) for k, v in obj.items()}
+  elif isinstance(obj, list):
+    return [_restore_bytes(v) for v in obj]
+  elif isinstance(obj, str):
+    try:
+      # intenta decodificar base64
+      data = base64.b64decode(obj, validate=True)
+      return data
+    except Exception:
+      return obj
+  return obj
+
 
 class RedisMemorySessionService(BaseSessionService):
   """A Redis-backed implementation of the session service."""
@@ -340,13 +339,15 @@ class RedisMemorySessionService(BaseSessionService):
 
     return session
 
-    async def _load_sessions(self, app_name: str, user_id: str) -> dict[str, dict]:
-        key = f"{State.APP_PREFIX}{app_name}:{user_id}"
-        raw = await self.cache.get(key)
-        if not raw:
-            return {}
-        raw_data = json.loads(raw.decode())
-        return raw_data
+  async def _load_sessions(
+      self, app_name: str, user_id: str
+  ) -> dict[str, dict]:
+    key = f"{State.APP_PREFIX}{app_name}:{user_id}"
+    raw = await self.cache.get(key)
+    if not raw:
+      return {}
+    raw_data = json.loads(raw.decode())
+    return raw_data
 
   async def _save_sessions(
       self, app_name: str, user_id: str, sessions: dict[str, Any]
