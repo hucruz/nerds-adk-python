@@ -198,11 +198,11 @@ def trace_call_llm(
 
   if llm_response.usage_metadata is not None:
     span.set_attribute(
-        'gen_ai.usage.input_tokens',
+        "gen_ai.usage.input_tokens",
         llm_response.usage_metadata.prompt_token_count,
     )
     span.set_attribute(
-        'gen_ai.usage.output_tokens',
+        "gen_ai.usage.output_tokens",
         llm_response.usage_metadata.candidates_token_count,
     )
 

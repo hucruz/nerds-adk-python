@@ -47,83 +47,85 @@ if TYPE_CHECKING:
 AF_FUNCTION_CALL_ID_PREFIX = 'adk-'
 REQUEST_EUC_FUNCTION_CALL_NAME = 'adk_request_credential'
 
-logger = logging.getLogger("google_adk." + __name__)
+logger = logging.getLogger('google_adk.' + __name__)
 
 
 def generate_client_function_call_id() -> str:
-    return f"{AF_FUNCTION_CALL_ID_PREFIX}{uuid.uuid4()}"
+  return f'{AF_FUNCTION_CALL_ID_PREFIX}{uuid.uuid4()}'
 
 
 def populate_client_function_call_id(model_response_event: Event) -> None:
-    if not model_response_event.get_function_calls():
-        return
-    for function_call in model_response_event.get_function_calls():
-        if not function_call.id:
-            function_call.id = generate_client_function_call_id()
+  if not model_response_event.get_function_calls():
+    return
+  for function_call in model_response_event.get_function_calls():
+    if not function_call.id:
+      function_call.id = generate_client_function_call_id()
 
 
 def remove_client_function_call_id(content: types.Content) -> None:
-    if content and content.parts:
-        for part in content.parts:
-            if (
-                part.function_call
-                and part.function_call.id
-                and part.function_call.id.startswith(AF_FUNCTION_CALL_ID_PREFIX)
-            ):
-                part.function_call.id = None
-            if (
-                part.function_response
-                and part.function_response.id
-                and part.function_response.id.startswith(AF_FUNCTION_CALL_ID_PREFIX)
-            ):
-                part.function_response.id = None
+  if content and content.parts:
+    for part in content.parts:
+      if (
+          part.function_call
+          and part.function_call.id
+          and part.function_call.id.startswith(AF_FUNCTION_CALL_ID_PREFIX)
+      ):
+        part.function_call.id = None
+      if (
+          part.function_response
+          and part.function_response.id
+          and part.function_response.id.startswith(AF_FUNCTION_CALL_ID_PREFIX)
+      ):
+        part.function_response.id = None
 
 
 def get_long_running_function_calls(
     function_calls: list[types.FunctionCall],
     tools_dict: dict[str, BaseTool],
 ) -> set[str]:
-    long_running_tool_ids = set()
-    for function_call in function_calls:
-        if (
-            function_call.name in tools_dict
-            and tools_dict[function_call.name].is_long_running
-        ):
-            long_running_tool_ids.add(function_call.id)
+  long_running_tool_ids = set()
+  for function_call in function_calls:
+    if (
+        function_call.name in tools_dict
+        and tools_dict[function_call.name].is_long_running
+    ):
+      long_running_tool_ids.add(function_call.id)
 
-    return long_running_tool_ids
+  return long_running_tool_ids
 
 
 def generate_auth_event(
     invocation_context: InvocationContext,
     function_response_event: Event,
 ) -> Optional[Event]:
-    if not function_response_event.actions.requested_auth_configs:
-        return None
-    parts = []
-    long_running_tool_ids = set()
-    for (
-        function_call_id,
-        auth_config,
-    ) in function_response_event.actions.requested_auth_configs.items():
-        request_euc_function_call = types.FunctionCall(
-            name=REQUEST_EUC_FUNCTION_CALL_NAME,
-            args=AuthToolArguments(
-                function_call_id=function_call_id,
-                auth_config=auth_config,
-            ).model_dump(exclude_none=True, by_alias=True),
-        )
-        request_euc_function_call.id = generate_client_function_call_id()
-        long_running_tool_ids.add(request_euc_function_call.id)
-        parts.append(types.Part(function_call=request_euc_function_call))
-
-    return Event(
-        invocation_id=invocation_context.invocation_id,
-        author=invocation_context.agent.name,
-        branch=invocation_context.branch,
-        content=types.Content(parts=parts, role=function_response_event.content.role),
-        long_running_tool_ids=long_running_tool_ids,
+  if not function_response_event.actions.requested_auth_configs:
+    return None
+  parts = []
+  long_running_tool_ids = set()
+  for (
+      function_call_id,
+      auth_config,
+  ) in function_response_event.actions.requested_auth_configs.items():
+    request_euc_function_call = types.FunctionCall(
+        name=REQUEST_EUC_FUNCTION_CALL_NAME,
+        args=AuthToolArguments(
+            function_call_id=function_call_id,
+            auth_config=auth_config,
+        ).model_dump(exclude_none=True, by_alias=True),
     )
+    request_euc_function_call.id = generate_client_function_call_id()
+    long_running_tool_ids.add(request_euc_function_call.id)
+    parts.append(types.Part(function_call=request_euc_function_call))
+
+  return Event(
+      invocation_id=invocation_context.invocation_id,
+      author=invocation_context.agent.name,
+      branch=invocation_context.branch,
+      content=types.Content(
+          parts=parts, role=function_response_event.content.role
+      ),
+      long_running_tool_ids=long_running_tool_ids,
+  )
 
 
 async def handle_function_calls_async(
@@ -132,14 +134,14 @@ async def handle_function_calls_async(
     tools_dict: dict[str, BaseTool],
     filters: Optional[set[str]] = None,
 ) -> Optional[Event]:
-    """Calls the functions and returns the function response event."""
-    from ...agents.llm_agent import LlmAgent
+  """Calls the functions and returns the function response event."""
+  from ...agents.llm_agent import LlmAgent
 
   agent = invocation_context.agent
   if not isinstance(agent, LlmAgent):
     return None
 
-    function_calls = function_call_event.get_function_calls()
+  function_calls = function_call_event.get_function_calls()
 
   # Filter function calls
   filtered_calls = [
@@ -494,36 +496,39 @@ async def _process_function_live_helper(
               and function_name in invocation_context.active_streaming_tools
           ):
             invocation_context.active_streaming_tools[function_name].task = None
-
-                function_response = {
-                    "status": f"Successfully stopped streaming function {function_name}"
-                }
-        else:
             function_response = {
-                "status": f"No active streaming function named {function_name} found"
+                'status': (
+                    f'Successfully stopped streaming function {function_name}'
+                )
             }
-    elif hasattr(tool, "func") and inspect.isasyncgenfunction(tool.func):
-        # for streaming tool use case
-        # we require the function to be a async generator function
-        async def run_tool_and_update_queue(tool, function_args, tool_context):
-            try:
-                async for result in __call_tool_live(
-                    tool=tool,
-                    args=function_args,
-                    tool_context=tool_context,
-                    invocation_context=invocation_context,
-                ):
-                    updated_content = types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_text(
-                                text=f"Function {tool.name} returned: {result}"
-                            )
-                        ],
+          else:
+            function_response = {
+                'status': (
+                    f'No active streaming function named {function_name} found'
+                )
+            }
+    elif hasattr(tool, 'func') and inspect.isasyncgenfunction(tool.func):
+      # for streaming tool use case
+      # we require the function to be a async generator function
+      async def run_tool_and_update_queue(tool, function_args, tool_context):
+        try:
+          async for result in __call_tool_live(
+              tool=tool,
+              args=function_args,
+              tool_context=tool_context,
+              invocation_context=invocation_context,
+          ):
+            updated_content = types.Content(
+                role='user',
+                parts=[
+                    types.Part.from_text(
+                        text=f'Function {tool.name} returned: {result}'
                     )
-                    invocation_context.live_request_queue.send_content(updated_content)
-            except asyncio.CancelledError:
-                raise  # Re-raise to properly propagate the cancellation
+                ],
+            )
+            invocation_context.live_request_queue.send_content(updated_content)
+        except asyncio.CancelledError:
+          raise  # Re-raise to properly propagate the cancellation
 
     task = asyncio.create_task(
         run_tool_and_update_queue(tool, function_args, tool_context)
@@ -561,19 +566,19 @@ def _get_tool_and_context(
     function_call: types.FunctionCall,
     tools_dict: dict[str, BaseTool],
 ):
-    if function_call.name not in tools_dict:
-        raise ValueError(
-            f"Function {function_call.name} is not found in the tools_dict."
-        )
-
-    tool_context = ToolContext(
-        invocation_context=invocation_context,
-        function_call_id=function_call.id,
+  if function_call.name not in tools_dict:
+    raise ValueError(
+        f'Function {function_call.name} is not found in the tools_dict.'
     )
 
-    tool = tools_dict[function_call.name]
+  tool_context = ToolContext(
+      invocation_context=invocation_context,
+      function_call_id=function_call.id,
+  )
 
-    return (tool, tool_context)
+  tool = tools_dict[function_call.name]
+
+  return (tool, tool_context)
 
 
 async def __call_tool_live(
@@ -582,13 +587,13 @@ async def __call_tool_live(
     tool_context: ToolContext,
     invocation_context: InvocationContext,
 ) -> AsyncGenerator[Event, None]:
-    """Calls the tool asynchronously (awaiting the coroutine)."""
-    async for item in tool._call_live(
-        args=args,
-        tool_context=tool_context,
-        invocation_context=invocation_context,
-    ):
-        yield item
+  """Calls the tool asynchronously (awaiting the coroutine)."""
+  async for item in tool._call_live(
+      args=args,
+      tool_context=tool_context,
+      invocation_context=invocation_context,
+  ):
+    yield item
 
 
 async def __call_tool_async(
@@ -596,8 +601,8 @@ async def __call_tool_async(
     args: dict[str, Any],
     tool_context: ToolContext,
 ) -> Any:
-    """Calls the tool."""
-    return await tool.run_async(args=args, tool_context=tool_context)
+  """Calls the tool."""
+  return await tool.run_async(args=args, tool_context=tool_context)
 
 
 def __build_response_event(
@@ -606,57 +611,57 @@ def __build_response_event(
     tool_context: ToolContext,
     invocation_context: InvocationContext,
 ) -> Event:
-    # Specs requires the result to be a dict.
-    if not isinstance(function_result, dict):
-        function_result = {"result": function_result}
+  # Specs requires the result to be a dict.
+  if not isinstance(function_result, dict):
+    function_result = {'result': function_result}
 
-    part_function_response = types.Part.from_function_response(
-        name=tool.name, response=function_result
-    )
-    part_function_response.function_response.id = tool_context.function_call_id
+  part_function_response = types.Part.from_function_response(
+      name=tool.name, response=function_result
+  )
+  part_function_response.function_response.id = tool_context.function_call_id
 
-    content = types.Content(
-        role="user",
-        parts=[part_function_response],
-    )
+  content = types.Content(
+      role='user',
+      parts=[part_function_response],
+  )
 
-    function_response_event = Event(
-        invocation_id=invocation_context.invocation_id,
-        author=invocation_context.agent.name,
-        content=content,
-        actions=tool_context.actions,
-        branch=invocation_context.branch,
-    )
+  function_response_event = Event(
+      invocation_id=invocation_context.invocation_id,
+      author=invocation_context.agent.name,
+      content=content,
+      actions=tool_context.actions,
+      branch=invocation_context.branch,
+  )
 
-    return function_response_event
+  return function_response_event
 
 
 def deep_merge_dicts(d1: dict, d2: dict) -> dict:
-    """Recursively merges d2 into d1."""
-    for key, value in d2.items():
-        if key in d1 and isinstance(d1[key], dict) and isinstance(value, dict):
-            d1[key] = deep_merge_dicts(d1[key], value)
-        else:
-            d1[key] = value
-    return d1
+  """Recursively merges d2 into d1."""
+  for key, value in d2.items():
+    if key in d1 and isinstance(d1[key], dict) and isinstance(value, dict):
+      d1[key] = deep_merge_dicts(d1[key], value)
+    else:
+      d1[key] = value
+  return d1
 
 
 def merge_parallel_function_response_events(
-    function_response_events: list["Event"],
-) -> "Event":
-    if not function_response_events:
-        raise ValueError("No function response events provided.")
+    function_response_events: list['Event'],
+) -> 'Event':
+  if not function_response_events:
+    raise ValueError('No function response events provided.')
 
-    if len(function_response_events) == 1:
-        return function_response_events[0]
-    merged_parts = []
-    for event in function_response_events:
-        if event.content:
-            for part in event.content.parts or []:
-                merged_parts.append(part)
+  if len(function_response_events) == 1:
+    return function_response_events[0]
+  merged_parts = []
+  for event in function_response_events:
+    if event.content:
+      for part in event.content.parts or []:
+        merged_parts.append(part)
 
-    # Use the first event as the "base" for common attributes
-    base_event = function_response_events[0]
+  # Use the first event as the "base" for common attributes
+  base_event = function_response_events[0]
 
   # Merge actions from all events
   merged_actions_data: dict[str, Any] = {}
@@ -668,48 +673,48 @@ def merge_parallel_function_response_events(
           event.actions.model_dump(exclude_none=True, by_alias=True),
       )
 
-    merged_actions = EventActions.model_validate(merged_actions_data)
+  merged_actions = EventActions.model_validate(merged_actions_data)
 
-    # Create the new merged event
-    merged_event = Event(
-        invocation_id=Event.new_id(),
-        author=base_event.author,
-        branch=base_event.branch,
-        content=types.Content(role="user", parts=merged_parts),
-        actions=merged_actions,  # Optionally merge actions if required
-    )
+  # Create the new merged event
+  merged_event = Event(
+      invocation_id=Event.new_id(),
+      author=base_event.author,
+      branch=base_event.branch,
+      content=types.Content(role='user', parts=merged_parts),
+      actions=merged_actions,  # Optionally merge actions if required
+  )
 
-    # Use the base_event as the timestamp
-    merged_event.timestamp = base_event.timestamp
-    return merged_event
+  # Use the base_event as the timestamp
+  merged_event.timestamp = base_event.timestamp
+  return merged_event
 
 
 def find_matching_function_call(
     events: list[Event],
 ) -> Optional[Event]:
-    """Finds the function call event that matches the function response id of the last event."""
-    if not events:
-        return None
-
-    last_event = events[-1]
-    if (
-        last_event.content
-        and last_event.content.parts
-        and any(part.function_response for part in last_event.content.parts)
-    ):
-        function_call_id = next(
-            part.function_response.id
-            for part in last_event.content.parts
-            if part.function_response
-        )
-        for i in range(len(events) - 2, -1, -1):
-            event = events[i]
-            # looking for the system long running request euc function call
-            function_calls = event.get_function_calls()
-            if not function_calls:
-                continue
-
-            for function_call in function_calls:
-                if function_call.id == function_call_id:
-                    return event
+  """Finds the function call event that matches the function response id of the last event."""
+  if not events:
     return None
+
+  last_event = events[-1]
+  if (
+      last_event.content
+      and last_event.content.parts
+      and any(part.function_response for part in last_event.content.parts)
+  ):
+    function_call_id = next(
+        part.function_response.id
+        for part in last_event.content.parts
+        if part.function_response
+    )
+    for i in range(len(events) - 2, -1, -1):
+      event = events[i]
+      # looking for the system long running request euc function call
+      function_calls = event.get_function_calls()
+      if not function_calls:
+        continue
+
+      for function_call in function_calls:
+        if function_call.id == function_call_id:
+          return event
+  return None
